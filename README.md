@@ -1,4 +1,4 @@
-# 🚗 Project Title
+# 🚗 Project Title(English)
 
 ## 📘 Overview
 ## 🧩 Features
@@ -7,7 +7,7 @@
 ## 🚀 Build & Run Instructions
 ## 📂 Repository Structure
 ---
-# 🚗 Project Title
+# 🚗 Project Title(한국어)
 
 ## 📘 Overview
 ## 🧩 Features
