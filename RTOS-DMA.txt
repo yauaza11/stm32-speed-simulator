@@ -372,7 +372,7 @@ int main(void)
 //	// PA6 analog
 //	GPIOA_CRL &= ~(0xF << 24); // MODE=00, CNF=00
 //
-//	ADC1_SMPR2 |= (7 << 18);   // CH6 = 239.5 cycles (충분히 길게)
+//	ADC1_SMPR2 |= (7 << 18);   // CH6 = 239.5 cycles 충분히 길게
 //	ADC1_SQR1  &= ~(0xF << 20); // L=0 (총 1변환)  <-- SQR1 L비트 명시 :contentReference[oaicite:6]{index=6}
 //	ADC1_SQR3   = 6;           // 1st conv = CH6
 //
@@ -428,7 +428,7 @@ int main(void)
 
 	/***********************PWM***************************/
 	GPIOA_CRL &= ~(0xF << 28);
-	GPIOA_CRL |=  (0xB << 28);   // MODE=11 (50MHz), CNF=10 (AF-PP)
+	GPIOA_CRL |=  (0xB << 28);   // MODE=11 (50MHz), CNF=10
 
 	TIM3_PSC = 72 - 1;         // 1 MHz
 	TIM3_ARR = 1000 - 1;
@@ -438,14 +438,14 @@ int main(void)
 	TIM3_CCMR1 |= (6<<12);     // PWM mode 1
 	TIM3_CCMR1 |= (1<<11);     // CCR preload enable
 
-	TIM3_CCMR1 |= (1<<7);      // ✅ ARR preload enable
+	TIM3_CCMR1 |= (1<<7);      // ARR preload enable
 	TIM3_CCER   |= (1<<4);     // CH2 enable
 //
-//	TIM3_CR1   &= ~(1<<2);     // ✅ URS=0 (모든 업데이트 이벤트 허용)
+//	TIM3_CR1   &= ~(1<<2);     
 //	TIM3_CR2   &= ~(0b111 << 4);
-//	TIM3_CR2   |=  (0b010 << 4);  // ✅ MMS=010 → TRGO=update event
+//	TIM3_CR2   |=  (0b010 << 4);  // MMS=010 → TRGO=update event
 //	TIM3_DIER  |=  (1<<0);        // update interrupt enable (optional)
-	TIM3_EGR   |=  (1<<0);        // ✅ 첫 Update Event 강제 발생
+	TIM3_EGR   |=  (1<<0);        // 첫 Update Event 강제 발생!
 	TIM3_CR1   |=  (1<<0);        // timer enable
 	/****************************************************/
 
@@ -1278,4 +1278,5 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
 
