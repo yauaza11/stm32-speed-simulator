@@ -28,20 +28,16 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
-#include "semphr.h"  // ✅ 추가! (세마포어 쓰려면 필수)
+#include "semphr.h"  // 추가!! 세마포어 쓰려면 필수
 //#include "cmsis_os.h" // 이건 맨 마지막에
-#include "timers.h"       // ⬅ 추가
-#include "portable.h"     // ⬅ 추가 (중요!)
-#include "stm32f1xx.h" // 이건 뭐지 CMSIS쓰기위한건가
+#include "timers.h"      
+#include "portable.h"     
+#include "stm32f1xx.h" 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 QueueHandle_t xADCQueue;
-
-//얘네들을 굳이 extern 해야하는건가?
-//extern TaskHandle_t buttonTaskHandle;
-//extern TaskHandle_t adcTaskHandle;
 
 TaskHandle_t buttonTaskHandle;
 TaskHandle_t adcTaskHandle;
@@ -580,8 +576,6 @@ void SystemClock_Config(void)
 
 void setup_interrupt(void){
 
-//	NVIC_SetPriorityGrouping(0); // ✅ 필수! 그룹 우선순위 초기화
-
 	NVIC_SetPriority(EXTI4_IRQn, 5);
 	NVIC_EnableIRQ(EXTI4_IRQn);
 
@@ -602,7 +596,7 @@ void setup_interrupt(void){
 
 void vADCTask(void *pvParameters)
 {
-//	uint8_t digit = 0;
+
     for (;;)
     {
     	ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -1284,3 +1278,4 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
