@@ -37,6 +37,3 @@ https://www.youtube.com/watch?v=8xLRWfMWGvE
 | **디버거**    | ST-Link V2                       |
 | **시스템 클럭** | 72 MHz                           |
 | **기타**     | FreeRTOS v10.x (RTOS 버전에서 사용 예정) |
-
-## 🚀 Build & Run Instructions
-## 📂 Repository Structure
