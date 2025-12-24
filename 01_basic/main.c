@@ -87,6 +87,15 @@
 #define AFIO_EXTICR2 (*(unsigned int*) 0x4001000C)
 
 
+#define ADC_CHECK_ON()   (GPIOC_BSRR = (1<<13))
+#define ADC_CHECK_OFF()  (GPIOC_BRR  = (1<<13))
+
+#define LED_CHECK_ON()   (GPIOA_BSRR = (1 << 1))
+#define LED_CHECK_OFF()  (GPIOA_BRR  = (1 << 1))
+
+#define SEG_CHECK_ON()   (GPIOA_BSRR = (1 << 4))
+#define SEG_CHECK_OFF()  (GPIOA_BRR  = (1 << 4))
+
 
 #include <stdint.h>
 
@@ -95,6 +104,7 @@ static uint16_t adc_value;
 static uint32_t led_delay;
 volatile uint8_t btn_flag = 0; // 전역 변수 선언
 volatile uint8_t stop_mode = 0;
+volatile uint8_t led_idx = 0;
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
@@ -135,6 +145,20 @@ int main(void)
 	- **PB10 - LED_5**
 	- **PB11 - LED_6**
 	*/
+
+	GPIOC_CRH &= ~(0xFFF << 20);   // Clear PC13~15
+	GPIOC_CRH |=  (0x111 << 20);   // Output, 10MHz
+
+	/* PA1, PA4 Output Push-Pull, 10MHz */
+	GPIOA_CRL &= ~(0xF << (1 * 4));   // PA1 Clear
+	GPIOA_CRL |=  (0x1 << (1 * 4));   // Output 10MHz, PP
+
+	GPIOA_CRL &= ~(0xF << (4 * 4));   // PA4 Clear
+	GPIOA_CRL |=  (0x1 << (4 * 4));   // Output 10MHz, PP
+
+	GPIOA_BRR = (1 << 1) | (1 << 4);
+	GPIOC_BRR = (1<<13) | (1<<14) | (1<<15);
+
 
 	GPIOA_CRL &= ~(0xF << 24); // ADC PA6 SET
 
@@ -287,88 +311,112 @@ int main(void)
 	    if (stop_mode)
 	    {
 	        print_stop();  // stop 상태 유지
+	        TIM3_CCR2 = 0;
+			SEG_CHECK_ON();
+			delay_loop(2000);
+			SEG_CHECK_OFF();
+
 	        continue;      // 아래 ADC, PWM 무시
 	    }
+	    ADC_CHECK_ON();
 
 		ADC1_CR2 |= (1 << 22);   // SWSTART trigger
 		while (!(ADC1_SR & (1 << 1)));     // EOC (End of Conversion) 기다림
 		adc_value = (uint16_t)ADC1_DR;     // 결과 레지스터 읽기
 
-		if(adc_value > 4000){
+
+		delay_loop(2000);
+		ADC_CHECK_OFF();
+
+		if(adc_value > 4010){
+			TIM3_CCR2 = 0;
+			SEG_CHECK_ON();
 			print_fast();
+			SEG_CHECK_OFF();
 		}
 		else if(adc_value < 1000){
+			TIM3_CCR2 = 0;
+			SEG_CHECK_ON();
 			print_stop();
+			SEG_CHECK_OFF();
+
 		}
 		else{
-			LEDs_sqeuence();
+
+			led_idx%=6;
+			LED_CHECK_ON();
+			LEDs_sqeuence(led_idx);
+			LED_CHECK_OFF();
+			led_idx++;
+
+			SEG_CHECK_ON();
 			seven_seg(adc_value);
-			TIM3_CCR2 = adc_value / 4;
+		    SEG_CHECK_OFF();
+
+			TIM3_CCR2 = (adc_value*(TIM3_ARR+1)) / 4095;
+
 		}
 	}
 }
 
-void LEDs_sqeuence()
+void LEDs_sqeuence(int idx)
 {
 	const uint32_t delay_table[8] = {300000, 200000, 130000, 80000, 50000, 30000, 15000, 7000};
 	uint8_t level = adc_value / 512;  // 0~7
 	led_delay = delay_table[level];
 
+	switch(idx){
+		case 0:
+			GPIOC_BSRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 1:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BSRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 2:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BSRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 3:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BSRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 4:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BSRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 5:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BSRR = (1<<11);
+			break;
 
-	for(int i=0; i<6; i++){
-		switch(i){
-			case 0:
-				GPIOC_BSRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 1:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BSRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 2:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BSRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 3:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BSRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 4:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BSRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 5:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BSRR = (1<<11);
-				break;
-
-		}
-		delay_loop(led_delay);
 	}
+	delay_loop(led_delay);
 }
 
 void delay_loop(uint32_t time)
@@ -680,4 +728,3 @@ void EXTI4_IRQHandler(void){
 
 	}
 }
-
