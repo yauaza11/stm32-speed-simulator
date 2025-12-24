@@ -97,25 +97,38 @@
 #define NVIC 0xE000E100
 #define AFIO_EXTICR2 (*(unsigned int*) 0x4001000C)
 
+#define ADC_CHECK_ON()   (GPIOC_BSRR = (1<<13))
+#define ADC_CHECK_OFF()  (GPIOC_BRR  = (1<<13))
 
+#define LED_CHECK_ON()   (GPIOA_BSRR = (1 << 1))
+#define LED_CHECK_OFF()  (GPIOA_BRR  = (1 << 1))
+
+#define SEG_CHECK_ON()   (GPIOA_BSRR = (1 << 4))
+#define SEG_CHECK_OFF()  (GPIOA_BRR  = (1 << 4))
 
 #include <stdint.h>
 
 
 static uint16_t adc_value;
-static uint32_t led_delay;
 volatile uint8_t btn_flag = 0; // 전역 변수 선언
 volatile uint8_t stop_mode = 0;
 volatile uint8_t seg_index = 0;
+volatile uint8_t led_tick = 0;   // TIM2에서 set
+volatile uint8_t seg_idx=0;
+volatile uint8_t led_idx=0;
+static uint32_t led_cnt = 0;
+
+uint32_t led_delay_cnt;
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
-void LEDs_sqeuence();
+void LEDs_sqeuence(uint8_t idx);
 void delay_loop(uint32_t time);
-void seven_seg(uint16_t adc_value);
+void seven_seg(uint16_t adc_value, int idx);
 void print_segment(uint8_t number);
+void led_delay_update(void);
 void print_stop();
 void print_fast();
 
@@ -136,6 +149,18 @@ int main(void)
 
 	/*************************************/
 
+	GPIOC_CRH &= ~(0xFFF << 20);   // Clear PC13~15
+	GPIOC_CRH |=  (0x111 << 20);   // Output, 10MHz
+
+	/* PA1, PA4 Output Push-Pull, 10MHz */
+	GPIOA_CRL &= ~(0xF << (1 * 4));   // PA1 Clear
+	GPIOA_CRL |=  (0x1 << (1 * 4));   // Output 10MHz, PP
+
+	GPIOA_CRL &= ~(0xF << (4 * 4));   // PA4 Clear
+	GPIOA_CRL |=  (0x1 << (4 * 4));   // Output 10MHz, PP
+
+	GPIOA_BRR = (1 << 1) | (1 << 4);
+	GPIOC_BRR = (1<<13) | (1<<14) | (1<<15);
 
 	/***************LEDs GPIO SET ******************/
 
@@ -227,7 +252,6 @@ int main(void)
 	ADC1_CR2 |= (1<<0); // ADC전원 ON
 	for (volatile int i = 0; i < 10000; i++); //안정화 대기
 
-
 	ADC1_SMPR2 |= (7<<18);
 	ADC1_SQR3 = 6;
 	ADC1_CR2 |= (1<<1);
@@ -304,97 +328,136 @@ int main(void)
 
 	    if (stop_mode)
 	    {
+	    	TIM3_CCR2 = 0;
+	    	SEG_CHECK_ON();
 	        print_stop();  // stop 상태 유지
+			SEG_CHECK_OFF();
 	        continue;      // 아래 ADC, PWM 무시
 	    }
+	    ADC_CHECK_ON();
 
 		ADC1_CR2 |= (1 << 22);   // SWSTART trigger
 		while (!(ADC1_SR & (1 << 1)));     // EOC (End of Conversion) 기다림
 		adc_value = (uint16_t)ADC1_DR;     // 결과 레지스터 읽기
+		led_delay_update();
+
+		delay_loop(2000);
+		ADC_CHECK_OFF();
 
 		if(adc_value > 4000){
+			TIM3_CCR2 = 0;
+			SEG_CHECK_ON();
 			print_fast();
+			SEG_CHECK_OFF();
 		}
 		else if(adc_value < 1000){
+			TIM3_CCR2 = 0;
+			SEG_CHECK_ON();
 			print_stop();
+			SEG_CHECK_OFF();
 		}
 		else{
-			LEDs_sqeuence();
-			//seven_seg(adc_value);
-			TIM3_CCR2 = adc_value / 4;
+
+			if (led_tick)
+			{
+			    led_tick = 0;
+			    led_cnt++;
+
+			    if (led_cnt > led_delay_cnt)
+			    {
+			        led_cnt = 0;
+			        LED_CHECK_ON();
+			        LEDs_sqeuence(led_idx);
+			        led_idx = (led_idx + 1) % 6;
+			        delay_loop(1000);
+			        LED_CHECK_OFF();
+			    }
+			}
+
+
+
+			SEG_CHECK_ON();
+			seven_seg(adc_value, seg_idx);
+			SEG_CHECK_OFF();
+
+			seg_idx = (seg_idx+1) % 4;
+
+			TIM3_CCR2 = (adc_value*(TIM3_ARR+1)) / 4095;
 		}
 	}
 }
 
-void LEDs_sqeuence()
+void LEDs_sqeuence(uint8_t idx)
 {
-	const uint32_t delay_table[8] = {300000, 200000, 130000, 80000, 50000, 30000, 15000, 7000};
-	uint8_t level = adc_value / 512;  // 0~7
-	led_delay = delay_table[level];
+	switch(idx){
+		case 0:
+			GPIOC_BSRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 1:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BSRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 2:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BSRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 3:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BSRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 4:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BSRR = (1<<10);
+			GPIOB_BRR = (1<<11);
+			break;
+		case 5:
+			GPIOC_BRR = (1<<5);
+			GPIOB_BRR = (1<<0);
+			GPIOB_BRR = (1<<1);
+			GPIOB_BRR = (1<<2);
+			GPIOB_BRR = (1<<10);
+			GPIOB_BSRR = (1<<11);
+			break;
 
-
-	for(int i=0; i<6; i++){
-		switch(i){
-			case 0:
-				GPIOC_BSRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 1:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BSRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 2:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BSRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 3:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BSRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 4:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BSRR = (1<<10);
-				GPIOB_BRR = (1<<11);
-				break;
-			case 5:
-				GPIOC_BRR = (1<<5);
-				GPIOB_BRR = (1<<0);
-				GPIOB_BRR = (1<<1);
-				GPIOB_BRR = (1<<2);
-				GPIOB_BRR = (1<<10);
-				GPIOB_BSRR = (1<<11);
-				break;
-
-		}
-		delay_loop(led_delay);
 	}
+
 }
 
-//void delay_loop(uint32_t time)
-//{
-//    for (volatile uint32_t i = 0; i < time; i++);
-//}
+void led_delay_update(void)
+{
+    const uint32_t delay_table[8] = {24, 20, 16, 12, 10, 6, 4, 2};
 
-void seven_seg(uint16_t adc_value)
+    uint8_t level = adc_value / 512; // 0~7
+    led_delay_cnt = delay_table[level];
+}
+
+
+void delay_loop(uint32_t time)
+{
+    for (volatile uint32_t i = 0; i < time; i++);
+}
+
+void seven_seg(uint16_t adc_value, int idx)
 {
 
 	uint8_t adc_value_1000 = adc_value/1000;     // PC6 - DIG_1_com
@@ -402,34 +465,33 @@ void seven_seg(uint16_t adc_value)
 	uint8_t adc_value_10 = (adc_value%100)/10;   //PB14 - DIG_3_com
 	uint8_t adc_value_1 = adc_value%10;			 //PB13 - DIG_4_com
 
-	for(int i=0; i<4; i++){
-        GPIOC_BSRR = (1<<6);
-        GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);
+	GPIOC_BSRR = (1<<6);
+	GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);
 
-		switch(i){
-			case 0:
-				GPIOC_BRR = (1<<6);
-				print_segment(adc_value_1000);	//print adc_value_1000
+	switch(idx){
+		case 0:
+			GPIOC_BRR = (1<<6);
+			print_segment(adc_value_1000);	//print adc_value_1000
 //				delay_loop(1000);
-				break;
-			case 1:
-				GPIOB_BRR = (1<<15);
-				print_segment(adc_value_100);	//print adc_value_1000
+			break;
+		case 1:
+			GPIOB_BRR = (1<<15);
+			print_segment(adc_value_100);	//print adc_value_1000
 //				delay_loop(1000);
-				break;
-			case 2:
-				GPIOB_BRR = (1<<14);
-				print_segment(adc_value_10);	//print adc_value_1000
+			break;
+		case 2:
+			GPIOB_BRR = (1<<14);
+			print_segment(adc_value_10);	//print adc_value_1000
 //				delay_loop(1000);
-				break;
-			case 3:
-				GPIOB_BRR = (1<<13);
-				print_segment(adc_value_1); 	//print adc_value_1000
+			break;
+		case 3:
+			GPIOB_BRR = (1<<13);
+			print_segment(adc_value_1); 	//print adc_value_1000
 //				delay_loop(1000);
-				break;
-		}
-
+			break;
 	}
+
+
 	/*stop, fast */
 	/* 0 1 2 3 4 5 6 7 8 9 */
 
@@ -557,73 +619,8 @@ void print_segment(uint8_t number)
 			GPIOC_BRR = (1<<7);
 			break;
 	}
-	//delay_loop(2000);
+	delay_loop(2000);
 }
-
-
-//void print_fast(void){
-//
-//	for(int i=0; i<4; i++){
-//		GPIOA_BRR = (1<<12) | (1<<11) | (1<<10) | (1<<9) | (1<<8);
-//		GPIOC_BRR = (1<<9) | (1<<8);
-//
-//		GPIOC_BSRR = (1<<6);                // DIG_1 off
-//		GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);  // DIG_2~4 off
-//		switch(i){
-//			case 0:
-//				GPIOC_BRR = (1<<6);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BRR = (1<<11); // b
-//				GPIOA_BRR = (1<<10); // c
-//				GPIOA_BRR = (1<<9); // d
-//				GPIOA_BSRR = (1<<8); // e
-//				GPIOC_BSRR = (1<<9); // f
-//				GPIOC_BSRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//			case 1:
-//				GPIOB_BRR = (1<<15);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BSRR = (1<<11); // b
-//				GPIOA_BSRR = (1<<10); // c
-//				GPIOA_BRR = (1<<9); // d
-//				GPIOA_BSRR = (1<<8); // e
-//				GPIOC_BSRR = (1<<9); // f
-//				GPIOC_BSRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//			case 2:
-//				GPIOB_BRR = (1<<14);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BRR = (1<<11); // b
-//				GPIOA_BSRR = (1<<10); // c
-//				GPIOA_BSRR = (1<<9); // d
-//				GPIOA_BRR = (1<<8); // e
-//				GPIOC_BSRR = (1<<9); // f
-//				GPIOC_BSRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//			case 3:
-//				GPIOB_BRR = (1<<13);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BSRR = (1<<11); // b
-//				GPIOA_BSRR = (1<<10); // c
-//				GPIOA_BRR = (1<<9); // d
-//				GPIOA_BRR = (1<<8); // e
-//				GPIOC_BRR = (1<<9); // f
-//				GPIOC_BRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//		}
-//		delay_loop(2000);
-//	    GPIOC_BSRR = (1<<6);
-//	    GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);
-//	}
-//}
 
 void print_fast(void)
 {
@@ -690,6 +687,7 @@ void print_fast(void)
 				GPIOC_BRR = (1<<7);
             	break;
         }
+        delay_loop(2000);
     }
 }
 
@@ -757,80 +755,9 @@ void print_stop(void)
 				GPIOC_BRR = (1<<7);
             	break;
         }
+        delay_loop(2000);
     }
 }
-
-
-
-//void print_stop(void){
-////	GPIOA_BRR = (1<<12) | (1<<11) | (1<<10) | (1<<9) | (1<<8);
-////	GPIOC_BRR = (1<<9) | (1<<8);
-//
-////	GPIOC_BSRR = (1<<6);                // DIG_1 off
-////	GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);  // DIG_2~4 off
-//
-//	for(int i=0; i<4; i++){
-//        GPIOC_BSRR = (1<<6);
-//        GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);
-//
-//        GPIOA_BRR = (1<<12) | (1<<11) | (1<<10) | (1<<9) | (1<<8);
-//        GPIOC_BRR = (1<<9) | (1<<8);
-//
-//		switch(i){
-//			case 0:
-//				GPIOC_BRR = (1<<6);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BRR = (1<<11); // b
-//				GPIOA_BSRR = (1<<10); // c
-//				GPIOA_BSRR = (1<<9); // d
-//				GPIOA_BRR = (1<<8); // e
-//				GPIOC_BSRR = (1<<9); // f
-//				GPIOC_BSRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//			case 1:
-//				GPIOB_BRR = (1<<15);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BSRR = (1<<11); // b
-//				GPIOA_BSRR = (1<<10); // c
-//				GPIOA_BRR = (1<<9); // d
-//				GPIOA_BRR = (1<<8); // e
-//				GPIOC_BRR = (1<<9); // f
-//				GPIOC_BRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//			case 2:
-//				GPIOB_BRR = (1<<14);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BSRR = (1<<11); // b
-//				GPIOA_BSRR = (1<<10); // c
-//				GPIOA_BSRR = (1<<9); // d
-//				GPIOA_BSRR = (1<<8); // e
-//				GPIOC_BSRR = (1<<9); // f
-//				GPIOC_BRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//			case 3:
-//				GPIOB_BRR = (1<<13);
-//
-//				GPIOA_BSRR = (1<<12); // a
-//				GPIOA_BSRR = (1<<11); // b
-//				GPIOA_BRR = (1<<10); // c
-//				GPIOA_BRR = (1<<9); // d
-//				GPIOA_BSRR = (1<<8); // e
-//				GPIOC_BSRR = (1<<9); // f
-//				GPIOC_BSRR = (1<<8); // g
-//				GPIOC_BRR = (1<<7);
-//				break;
-//		}
-//		delay_loop(2000);
-//	    GPIOC_BSRR = (1<<6);
-//	    GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);
-//	}
-//}
 
 //ISR 설정
 void EXTI4_IRQHandler(void){
@@ -844,30 +771,9 @@ void EXTI4_IRQHandler(void){
 
 void TIM2_IRQHandler(void)
 {
-    if (TIM2_SR & 1)  // UIF 플래그
-    {
-        TIM2_SR &= ~1; // 클리어
-
-        GPIOC_BSRR = (1<<6);                // DIG_1 off
-        GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);  // DIG_2~4 off
-        // 4자리 중 현재 자리 선택
-        switch(seg_index) {
-            case 0: GPIOC_BRR = (1<<6);
-                    print_segment(adc_value / 1000);
-                    break;
-            case 1: GPIOB_BRR = (1<<15);
-                    print_segment((adc_value % 1000) / 100);
-                    break;
-            case 2: GPIOB_BRR = (1<<14);
-                    print_segment((adc_value % 100) / 10);
-                    break;
-            case 3: GPIOB_BRR = (1<<13);
-                    print_segment(adc_value % 10);
-                    break;
-        }
-
-        // 다음 자리로 순환
-        seg_index = (seg_index + 1) % 4;
-    }
+	if (TIM2_SR & 1) {
+		TIM2_SR &= ~1;
+		led_tick = 1;
+	}
 }
 
