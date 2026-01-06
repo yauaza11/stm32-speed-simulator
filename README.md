@@ -7,11 +7,15 @@
 코드는 Bare-Metal 버전 3개와 FreeRTOS버전 1개로 나뉘어져 있다.
 
 01_basic은 처음 작성한 코드이다.
+
 02_improved는 01_basic에서 7-segment의 가시성을 향상 시킨 코드이다.
+
 03_non-blokcing은 모든 센서를 interrupt 기반으로 작성한 코드이다.
+
 04_FreeRTOS는 이 시스템을 FreeRTOS기반으로 동작하는 코드이다.
 
 모든 코드의 기능은 같으며, 동작영상 링크는 다음과 같다.
+
 https://www.youtube.com/watch?v=8xLRWfMWGvE
 
 ## 🧩 주요기능
