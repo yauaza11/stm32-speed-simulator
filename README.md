@@ -6,7 +6,7 @@
 현재 속도는 7-Segment Display로 출력되며(0-4095), 가변저항 값에 비례해 모터의 속도(PWM)를 제어한다.
 코드는 Bare-Metal 버전 3개와 FreeRTOS버전 1개로 나뉘어져 있다.
 
-01_basic은 처음 작성한 코드이다.
+01_basic은 처음 작성한 코드이며, s32k144, stm32f103rb 보드 위에 올린 두 버전의 코드가 있다.
 
 02_improved는 01_basic에서 7-segment의 가시성을 향상 시킨 코드이다.
 
