@@ -223,6 +223,10 @@ volatile uint8_t led_delay_ticks = 100;
 volatile uint8_t led_index = 0;
 volatile uint16_t adc_dma_buffer[1]; // DMA 전용 버퍼
 
+static inline uint8_t is_fast(uint16_t v) {return (v>4000);}
+static inline uint8_t is_adc_stop(uint16_t v) { return (v<500);}
+static inline uint16_t calc_led_delay(uint16_t v){ return 10+(4095 - v)/45; }
+
 /* USER CODE END 0 */
 
 /**
@@ -472,7 +476,7 @@ int main(void)
 
     NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4); // 필수
 
-//	xADCQueue = xQueueCreate(1, sizeof(uint16_t)); // Queue 만들기
+	xADCQueue = xQueueCreate(1, sizeof(uint16_t)); // Queue 만들기!!
 	xButtonSem = xSemaphoreCreateBinary();
 
 	xTaskCreate(vADCTask, "ADC", 384, NULL, 2, &adcTaskHandle);
@@ -566,6 +570,30 @@ void setup_interrupt(void){
 
 }
 
+//void vADCTask(void *pvParameters)
+//{
+//    for (;;)
+//    {
+//    	ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//    	ADC_CHECK_ON();
+//
+//    	uint16_t val = adc_dma_buffer[0];
+//		adc_value = val;
+//
+//		if (val > 4000) {
+//			adc_state = 1;
+//		}
+//		else if (val < 500) {
+//			adc_state = 2;
+//		}
+//		else{
+//			adc_state = 0;
+//		}
+//		led_delay_ticks = 10 + (4095 - val) / 45;
+//		ADC_CHECK_OFF();
+//    }
+//}
+
 void vADCTask(void *pvParameters)
 {
     for (;;)
@@ -574,19 +602,8 @@ void vADCTask(void *pvParameters)
     	ADC_CHECK_ON();
 
     	uint16_t val = adc_dma_buffer[0];
-		adc_value = val;
-
-		if (val > 4000) {
-			adc_state = 1;
-		}
-		else if (val < 500) {
-			adc_state = 2;
-		}
-		else{
-			adc_state = 0;
-		}
-		led_delay_ticks = 10 + (4095 - val) / 45;
-		ADC_CHECK_OFF();
+    	xQueueOverwrite(xADCQueue, &val);
+    	LED_CHECK_OFF();
     }
 }
 
@@ -595,9 +612,22 @@ void vLEDTask(void *pvParameters){
 	for(;;){
 		LED_CHECK_ON();
 
-		if(stop_mode||adc_state==2||adc_state==1) {
+		if(stop_mode) {
+			taskYIELD();
             continue;   // LED off or skip blinking
 		}
+
+		uint16_t v;
+		if(xQueuePeek(xADCQueue, &v, pdMS_TO_TICKS(5)) != pdPASS){
+			vTaskDelay(pdMS_TO_TICKS(10));
+			continue;
+		}
+
+		if (is_fast(v) || is_adc_stop(v)) {
+			vTaskDelay(pdMS_TO_TICKS(10));
+			continue;
+		}
+
 
 		update_led_pattern(led_index);
 		led_index = (led_index+1)%6;
@@ -613,16 +643,22 @@ void vPWMTask(void *pvParameters)
     {
     	if(stop_mode) {
 			TIM3_CCR2 = 0;
+			vTaskDelay(pdMS_TO_TICKS(5));
 			taskYIELD();
 			continue;
     	}
-        uint16_t val = adc_value;
+//        uint16_t val = adc_value;
 
-        if (adc_state == 0)
-            TIM3_CCR2 = (val * 1000) / 4095;
-        else
-            TIM3_CCR2 = 0;
+//        if (adc_state == 0)
+//            TIM3_CCR2 = (val * 1000) / 4095;
+//        else
+//            TIM3_CCR2 = 0;
 
+    	uint16_t v;
+    	if(xQueuePeek(xADCQueue, &v, pdMS_TO_TICKS(5)) == pdPASS){
+    		if(is_fast(v) || is_adc_stop(v)) TIM3_CCR2 = 0;
+    		else TIM3_CCR2 = (v*1000)/4095;
+    	}
         vTaskDelay(pdMS_TO_TICKS(5));  // 주기적으로 PWM 갱신
     }
 }
@@ -650,8 +686,10 @@ void vSEGTask(void *pvParameters)
 		GPIOC_BSRR = (1<<6);
 		GPIOB_BSRR = (1<<15) | (1<<14) | (1<<13);
 
+		uint16_t v = 0;
+		xQueuePeek(xADCQueue, &v ,0);
 
-    	if(adc_state==2 || stop_mode==1){
+    	if(stop_mode || is_adc_stop(v)){
             switch(idx)
             {
                 case 0:
@@ -675,13 +713,39 @@ void vSEGTask(void *pvParameters)
                     break;
             }
     	}
-    	else if(adc_state==0){
+    	// Fast Mode
+		else if(is_fast(v)){
+			switch(idx)
+				{
+					case 0:
+						GPIOC_BRR = (1<<6);
+						print_char('F');
+						break;
 
-			uint16_t val = adc_value;
-			uint8_t d0 = val / 1000;
-			uint8_t d1 = (val % 1000) / 100;
-			uint8_t d2 = (val % 100) / 10;
-			uint8_t d3 = val % 10;
+					case 1:
+						GPIOB_BRR = (1<<15);
+						print_char('A');
+						break;
+
+					case 2:
+						GPIOB_BRR = (1<<14);
+						print_char('S');
+						break;
+
+					case 3:
+						GPIOB_BRR = (1<<13);
+						print_char('T');
+						break;
+				}
+		}
+
+    	else{
+
+//			uint16_t val = adc_value;
+			uint8_t d0 = v / 1000;
+			uint8_t d1 = (v % 1000) / 100;
+			uint8_t d2 = (v % 100) / 10;
+			uint8_t d3 = v % 10;
 
             switch(idx)
             {
@@ -706,31 +770,7 @@ void vSEGTask(void *pvParameters)
                     break;
             }
     	}
-    	// Fast Mode
-    	else if(adc_state==1){
-    		switch(idx)
-				{
-					case 0:
-						GPIOC_BRR = (1<<6);
-						print_char('F');
-						break;
 
-					case 1:
-						GPIOB_BRR = (1<<15);
-						print_char('A');
-						break;
-
-					case 2:
-						GPIOB_BRR = (1<<14);
-						print_char('S');
-						break;
-
-					case 3:
-						GPIOB_BRR = (1<<13);
-						print_char('T');
-						break;
-				}
-    	}
 
 
         idx = (idx + 1) % 4;
