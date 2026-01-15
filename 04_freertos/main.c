@@ -225,7 +225,6 @@ volatile uint16_t adc_dma_buffer[1]; // DMA 전용 버퍼
 
 static inline uint8_t is_fast(uint16_t v) {return (v>4000);}
 static inline uint8_t is_adc_stop(uint16_t v) { return (v<500);}
-static inline uint16_t calc_led_delay(uint16_t v){ return 10+(4095 - v)/45; }
 
 /* USER CODE END 0 */
 
@@ -599,27 +598,26 @@ void vADCTask(void *pvParameters)
     for (;;)
     {
     	ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    	ADC_CHECK_ON();
+    	//ADC_CHECK_ON();
 
     	uint16_t val = adc_dma_buffer[0];
     	xQueueOverwrite(xADCQueue, &val);
-    	LED_CHECK_OFF();
+    	//LED_CHECK_OFF();
     }
 }
 
 void vLEDTask(void *pvParameters){
 
 	for(;;){
-		LED_CHECK_ON();
+		//LED_CHECK_ON();
 
 		if(stop_mode) {
-			taskYIELD();
+			vTaskDelay(pdMS_TO_TICKS(20));
             continue;   // LED off or skip blinking
 		}
 
 		uint16_t v;
 		if(xQueuePeek(xADCQueue, &v, pdMS_TO_TICKS(5)) != pdPASS){
-			vTaskDelay(pdMS_TO_TICKS(10));
 			continue;
 		}
 
@@ -632,34 +630,30 @@ void vLEDTask(void *pvParameters){
 		update_led_pattern(led_index);
 		led_index = (led_index+1)%6;
 
-		LED_CHECK_OFF();
+		//LED_CHECK_OFF();
 		vTaskDelay(pdMS_TO_TICKS(led_delay_ticks));
 	}
 }
 
 void vPWMTask(void *pvParameters)
 {
+	TickType_t xLastWakeTime = xTaskGetTickCount();
+	const TickType_t period = pdMS_TO_TICKS(5);
+
     for (;;)
     {
     	if(stop_mode) {
 			TIM3_CCR2 = 0;
-			vTaskDelay(pdMS_TO_TICKS(5));
-			taskYIELD();
+			vTaskDelayUntil(&xLastWakeTime, period);
 			continue;
     	}
-//        uint16_t val = adc_value;
-
-//        if (adc_state == 0)
-//            TIM3_CCR2 = (val * 1000) / 4095;
-//        else
-//            TIM3_CCR2 = 0;
 
     	uint16_t v;
     	if(xQueuePeek(xADCQueue, &v, pdMS_TO_TICKS(5)) == pdPASS){
     		if(is_fast(v) || is_adc_stop(v)) TIM3_CCR2 = 0;
     		else TIM3_CCR2 = (v*1000)/4095;
     	}
-        vTaskDelay(pdMS_TO_TICKS(5));  // 주기적으로 PWM 갱신
+    	vTaskDelayUntil(&xLastWakeTime, period);  // 주기적으로 PWM 갱신
     }
 }
 
@@ -678,6 +672,7 @@ void vButtonTask(void *pvParameters)
 void vSEGTask(void *pvParameters)
 {
     static int idx = 0;
+    TickType_t xLastWakeTime = xTaskGetTickCount();
 
     for(;;)
     {
@@ -771,12 +766,10 @@ void vSEGTask(void *pvParameters)
             }
     	}
 
-
-
         idx = (idx + 1) % 4;
 
-        SEG_CHECK_OFF();
-        vTaskDelay(pdMS_TO_TICKS(4));
+        //SEG_CHECK_OFF();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(4));
     }
 }
 
@@ -1205,7 +1198,7 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 
 void vApplicationMallocFailedHook(void)
 {
-    // 힙 메모리 부족 시 LED 느리게 점멸
+    // 힙 메모리 부족 시에 LED 느리게 점멸
     while (1)
     {
     	// 세번째 LED
