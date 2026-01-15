@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os.h"
+//#include "cmsis_os.h"
 //#include "usart.h"
 //#include "gpio.h"
 
@@ -29,7 +29,6 @@
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"  // 추가! (세마포어 쓰려면 필수)
-//#include "cmsis_os.h" // 이건 맨 마지막에
 #include "timers.h"
 #include "portable.h"
 #include "stm32f1xx.h"
@@ -478,11 +477,11 @@ int main(void)
 	xADCQueue = xQueueCreate(1, sizeof(uint16_t)); // Queue 만들기!!
 	xButtonSem = xSemaphoreCreateBinary();
 
-	xTaskCreate(vADCTask, "ADC", 384, NULL, 2, &adcTaskHandle);
-	xTaskCreate(vPWMTask, "PWM", 384, NULL, 2, NULL);
-	xTaskCreate(vLEDTask, "LED", 384, NULL, 1, NULL); // 정성적 피드백이라 낮아도 됌
-	xTaskCreate(vSEGTask, "7SEG", 384, NULL,2, NULL); // 정량적 피드백이기에 정확한 숫자표기를 위해 순위를 올림
-	xTaskCreate(vButtonTask, "BTN", 384, NULL, 3, NULL); // 브레이크 이기때문에 1순위
+	xTaskCreate(vADCTask, "ADC", 256, NULL, 1, &adcTaskHandle);
+	xTaskCreate(vPWMTask, "PWM", 256, NULL, 2, NULL);
+	xTaskCreate(vLEDTask, "LED", 256, NULL, 0, NULL); // 정성적 피드백이라 낮아도 됌
+	xTaskCreate(vSEGTask, "7SEG", 256, NULL,0, NULL); // 정량적 피드백이기에 정확한 숫자표기를 위해 순위를 올림
+	xTaskCreate(vButtonTask, "BTN", 256, NULL, 3, NULL); // 브레이크 이기때문에 1순위
 
 //	xTaskNotifyGive(xLedTaskHandle);
 
@@ -602,6 +601,7 @@ void vADCTask(void *pvParameters)
 
     	uint16_t val = adc_dma_buffer[0];
     	xQueueOverwrite(xADCQueue, &val);
+    	led_delay_ticks = 10 + (4095 - val) / 45;
     	//LED_CHECK_OFF();
     }
 }
@@ -618,6 +618,7 @@ void vLEDTask(void *pvParameters){
 
 		uint16_t v;
 		if(xQueuePeek(xADCQueue, &v, pdMS_TO_TICKS(5)) != pdPASS){
+
 			continue;
 		}
 
@@ -768,7 +769,7 @@ void vSEGTask(void *pvParameters)
 
         idx = (idx + 1) % 4;
 
-        //SEG_CHECK_OFF();
+        SEG_CHECK_OFF();
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(4));
     }
 }
